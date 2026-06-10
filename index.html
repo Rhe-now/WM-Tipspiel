@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WM 2026 Tippspiel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --pitch:#0b7a3b; --pitch-dark:#06351b; --ink:#0e1a14; --gold:#f2c200;
+    --paper:#f5f7f3; --card:#ffffff; --line:#e2e7df; --muted:#5d6b60; --red:#cc3b2e;
+    --shadow:0 1px 2px rgba(14,26,20,.06),0 4px 16px rgba(14,26,20,.05);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{font-family:'Inter',system-ui,sans-serif;background:var(--paper);color:var(--ink);
+    -webkit-text-size-adjust:100%;line-height:1.45}
+  h1,h2,h3{font-family:'Oswald',sans-serif;font-weight:600;letter-spacing:.02em;margin:0}
+  a{color:var(--pitch)}
+  .wrap{max-width:760px;margin:0 auto;padding:0 14px 64px}
+
+  header{background:linear-gradient(160deg,var(--pitch) 0%,var(--pitch-dark) 100%);color:#fff;
+    padding:22px 0 18px;position:relative;overflow:hidden}
+  header .wrap{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding-bottom:0}
+  header h1{font-size:30px;text-transform:uppercase;line-height:.98;font-weight:700}
+  header .sub{font-size:12px;letter-spacing:.18em;text-transform:uppercase;opacity:.8;margin-top:4px}
+  header::after{content:"";position:absolute;right:-40px;top:-40px;width:180px;height:180px;
+    border:14px solid rgba(255,255,255,.06);border-radius:50%}
+  .me-chip{font-size:13px;background:rgba(255,255,255,.14);padding:7px 11px;border-radius:999px;
+    white-space:nowrap;display:flex;align-items:center;gap:7px}
+  .me-chip b{font-weight:600}
+
+  nav{position:sticky;top:0;z-index:20;background:var(--card);border-bottom:1px solid var(--line);
+    display:flex;overflow-x:auto;scrollbar-width:none}
+  nav::-webkit-scrollbar{display:none}
+  nav button{flex:0 0 auto;background:none;border:none;padding:13px 14px;font-family:'Oswald',sans-serif;
+    font-size:14px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);cursor:pointer;
+    border-bottom:3px solid transparent}
+  nav button.active{color:var(--ink);border-bottom-color:var(--gold)}
+
+  .panel{padding-top:18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;
+    margin-bottom:14px;box-shadow:var(--shadow)}
+  .card h2{font-size:19px;margin-bottom:2px;text-transform:uppercase}
+  .card .hint{color:var(--muted);font-size:13px;margin:2px 0 12px}
+
+  label{display:block;font-size:13px;font-weight:600;margin:10px 0 5px}
+  input[type=text],input[type=password],input[type=number],select{width:100%;font:inherit;
+    padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+  input:focus,select:focus,button:focus-visible{outline:2px solid var(--pitch);outline-offset:1px}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font:inherit;font-weight:600;
+    background:var(--pitch);color:#fff;border:none;padding:12px 16px;border-radius:10px;cursor:pointer}
+  .btn:hover{filter:brightness(1.05)}
+  .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+  .btn.gold{background:var(--gold);color:#3a2c00}
+  .btn.danger{background:var(--red)}
+  .btn.sm{padding:7px 11px;font-size:13px;border-radius:8px}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+  .group-title{display:flex;align-items:baseline;gap:8px;margin:18px 0 8px}
+  .group-title h3{font-size:17px;text-transform:uppercase}
+  .group-title span{font-size:12px;color:var(--muted)}
+
+  .match{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:8px;
+    padding:10px 0;border-top:1px solid var(--line)}
+  .match:first-child{border-top:none}
+  .team{display:flex;align-items:center;gap:7px;min-width:0}
+  .team.home{justify-content:flex-end;text-align:right}
+  .team .flag{font-size:20px;line-height:1}
+  .team .nm{font-size:14px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .score{display:flex;align-items:center;gap:4px}
+  .score input{width:40px;text-align:center;font-family:'Oswald';font-size:20px;font-weight:600;
+    padding:6px 2px;background:var(--ink);color:#fff;border:none;border-radius:8px}
+  .score input::-webkit-outer-spin-button,.score input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  .score input[type=number]{-moz-appearance:textfield}
+  .score .colon{color:var(--muted);font-weight:700}
+  .mstatus{grid-column:1/-1;font-size:11px;color:var(--muted);display:flex;justify-content:space-between;
+    gap:8px;margin-top:-2px}
+  .mstatus .res{font-weight:600;color:var(--ink)}
+  .mstatus .pts{color:var(--pitch);font-weight:600}
+  .locked .score input{background:#9aa69d}
+
+  table.lb{width:100%;border-collapse:collapse}
+  table.lb th,table.lb td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--line);font-size:14px}
+  table.lb th{font-family:'Oswald';text-transform:uppercase;font-size:12px;color:var(--muted);letter-spacing:.04em}
+  table.lb td.num,table.lb th.num{text-align:right;font-variant-numeric:tabular-nums}
+  table.lb td.pts{font-family:'Oswald';font-size:18px;font-weight:600}
+  table.lb tr.me{background:#fffaf0}
+  .rank{font-family:'Oswald';font-weight:600;color:var(--muted);width:28px}
+  .rank.medal1{color:#caa100}.rank.medal2{color:#8a8f93}.rank.medal3{color:#a4682f}
+
+  .order-list{list-style:none;margin:0;padding:0}
+  .order-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
+  .order-row:first-child{border-top:none}
+  .order-row .pos{font-family:'Oswald';font-weight:700;width:22px;color:var(--pitch)}
+  .order-row .grow{flex:1;display:flex;align-items:center;gap:8px;min-width:0}
+  .order-row .nm{font-weight:500}
+  .order-row.qual{}
+  .order-row .qbadge{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--pitch);
+    border:1px solid var(--pitch);border-radius:6px;padding:1px 5px}
+  .arrows{display:flex;flex-direction:column;gap:2px}
+  .arrows button{background:#fff;border:1px solid var(--line);border-radius:6px;width:30px;height:22px;
+    cursor:pointer;line-height:1;font-size:12px}
+
+  .note{font-size:12px;color:var(--muted)}
+  .toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--ink);color:#fff;
+    padding:10px 16px;border-radius:999px;font-size:14px;opacity:0;pointer-events:none;transition:.25s;z-index:50}
+  .toast.show{opacity:1}
+  .pill{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;background:#eef2ec;color:var(--muted)}
+  .pill.live{background:#fdecea;color:var(--red)}
+  .pill.done{background:#e7f3ec;color:var(--pitch)}
+  .setup-warn{background:#fff6e5;border:1px solid #f0d8a0;color:#6b5200;border-radius:12px;padding:14px;
+    font-size:14px;margin-bottom:14px}
+  details summary{cursor:pointer;font-weight:600;font-size:14px}
+  footer{margin-top:24px;font-size:12px;color:var(--muted);text-align:center}
+  .empty{text-align:center;color:var(--muted);padding:26px 8px;font-size:14px}
+  @media (max-width:420px){
+    header h1{font-size:24px}
+    .team .nm{font-size:13px}
+    .score input{width:36px;font-size:18px}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div>
+      <h1>WM 2026<br>Tippspiel</h1>
+      <div class="sub" id="leagueSub">USA · Kanada · Mexiko</div>
+    </div>
+    <div class="me-chip" id="meChip">nicht angemeldet</div>
+  </div>
+</header>
+
+<nav id="nav">
+  <button data-tab="lb" class="active">Rangliste</button>
+  <button data-tab="groups">Gruppen tippen</button>
+  <button data-tab="placement">Platzierung</button>
+  <button data-tab="ko">K.-o.-Runde</button>
+  <button data-tab="me">Ich</button>
+  <button data-tab="admin">Admin</button>
+</nav>
+
+<div class="wrap">
+  <div id="setupWarn"></div>
+  <div id="panel" class="panel"></div>
+  <footer>
+    Daten: TheSportsDB (kostenlos) · Resultate können verzögert/lückenhaft sein – Admin kann jederzeit
+    manuell korrigieren. Punkte werden automatisch berechnet.
+  </footer>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   1) KONFIGURATION  —  HIER EINTRAGEN (einmalig, dann committen)
+   ============================================================ */
+const SUPABASE_URL      = "https://lfhywvasmkonrkaavjck.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmaHl3dmFzbWtvbnJrYWF2amNrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMTg5MTYsImV4cCI6MjA5NjU5NDkxNn0.oetmkRawVDdFWWpQsWW2AANWOcaI-KpBLFTel6eWYzw";
+
+const WC_LEAGUE_ID = "4429";   // TheSportsDB: FIFA World Cup
+const WC_SEASON    = "2026";
+
+/* ============================================================
+   2) STATISCHE TURNIERDATEN (verifiziert, Stand Juni 2026)
+   ============================================================ */
+const GROUPS = {
+  A:["Mexico","South Africa","South Korea","Czechia"],
+  B:["Canada","Bosnia and Herzegovina","Qatar","Switzerland"],
+  C:["Brazil","Morocco","Haiti","Scotland"],
+  D:["United States","Paraguay","Australia","Türkiye"],
+  E:["Germany","Curaçao","Côte d'Ivoire","Ecuador"],
+  F:["Netherlands","Japan","Sweden","Tunisia"],
+  G:["Belgium","Egypt","Iran","New Zealand"],
+  H:["Spain","Cape Verde","Saudi Arabia","Uruguay"],
+  I:["France","Senegal","Iraq","Norway"],
+  J:["Argentina","Algeria","Austria","Jordan"],
+  K:["Portugal","DR Congo","Uzbekistan","Colombia"],
+  L:["England","Croatia","Ghana","Panama"]
+};
+const FLAGS = {
+  "Mexico":"🇲🇽","South Africa":"🇿🇦","South Korea":"🇰🇷","Czechia":"🇨🇿",
+  "Canada":"🇨🇦","Bosnia and Herzegovina":"🇧🇦","Qatar":"🇶🇦","Switzerland":"🇨🇭",
+  "Brazil":"🇧🇷","Morocco":"🇲🇦","Haiti":"🇭🇹","Scotland":"🏴󠁧󠁢󠁳󠁣󠁴󠁿",
+  "United States":"🇺🇸","Paraguay":"🇵🇾","Australia":"🇦🇺","Türkiye":"🇹🇷",
+  "Germany":"🇩🇪","Curaçao":"🇨🇼","Côte d'Ivoire":"🇨🇮","Ecuador":"🇪🇨",
+  "Netherlands":"🇳🇱","Japan":"🇯🇵","Sweden":"🇸🇪","Tunisia":"🇹🇳",
+  "Belgium":"🇧🇪","Egypt":"🇪🇬","Iran":"🇮🇷","New Zealand":"🇳🇿",
+  "Spain":"🇪🇸","Cape Verde":"🇨🇻","Saudi Arabia":"🇸🇦","Uruguay":"🇺🇾",
+  "France":"🇫🇷","Senegal":"🇸🇳","Iraq":"🇮🇶","Norway":"🇳🇴",
+  "Argentina":"🇦🇷","Algeria":"🇩🇿","Austria":"🇦🇹","Jordan":"🇯🇴",
+  "Portugal":"🇵🇹","DR Congo":"🇨🇩","Uzbekistan":"🇺🇿","Colombia":"🇨🇴",
+  "England":"🏴󠁧󠁢󠁥󠁮󠁧󠁿","Croatia":"🇭🇷","Ghana":"🇬🇭","Panama":"🇵🇦"
+};
+// Verschiedene Schreibweisen der API → kanonischer Name
+const SYNONYMS = {
+  "usa":"United States","united states":"United States","united states of america":"United States",
+  "korea republic":"South Korea","south korea":"South Korea","republic of korea":"South Korea",
+  "cote divoire":"Côte d'Ivoire","cote d ivoire":"Côte d'Ivoire","ivory coast":"Côte d'Ivoire","cote divoire":"Côte d'Ivoire",
+  "czech republic":"Czechia","czechia":"Czechia",
+  "cape verde":"Cape Verde","cabo verde":"Cape Verde","cape verde islands":"Cape Verde",
+  "turkey":"Türkiye","turkiye":"Türkiye",
+  "bosnia and herzegovina":"Bosnia and Herzegovina","bosnia herzegovina":"Bosnia and Herzegovina","bosnia":"Bosnia and Herzegovina",
+  "dr congo":"DR Congo","congo dr":"DR Congo","democratic republic of congo":"DR Congo","congo democratic republic":"DR Congo",
+  "curacao":"Curaçao","scotland":"Scotland","england":"England"
+};
+
+const TEAM2GROUP = {};
+Object.entries(GROUPS).forEach(([g,ts])=>ts.forEach(t=>TEAM2GROUP[t]=g));
+
+// Vollständiger Gruppen-Spielplan (Quelle: offizieller FIFA-/Yahoo-Spielplan). Zeiten in US-Ostzeit (-04:00).
+const RAW_FIXTURES = [
+  ["A","Mexico","South Africa","2026-06-11T15:00:00-04:00"],
+  ["A","South Korea","Czechia","2026-06-11T22:00:00-04:00"],
+  ["A","Czechia","South Africa","2026-06-18T12:00:00-04:00"],
+  ["A","Mexico","South Korea","2026-06-18T21:00:00-04:00"],
+  ["A","Czechia","Mexico","2026-06-24T21:00:00-04:00"],
+  ["A","South Africa","South Korea","2026-06-24T21:00:00-04:00"],
+  ["B","Canada","Bosnia and Herzegovina","2026-06-12T15:00:00-04:00"],
+  ["B","Qatar","Switzerland","2026-06-13T15:00:00-04:00"],
+  ["B","Switzerland","Bosnia and Herzegovina","2026-06-18T15:00:00-04:00"],
+  ["B","Canada","Qatar","2026-06-18T18:00:00-04:00"],
+  ["B","Switzerland","Canada","2026-06-24T15:00:00-04:00"],
+  ["B","Bosnia and Herzegovina","Qatar","2026-06-24T15:00:00-04:00"],
+  ["C","Brazil","Morocco","2026-06-13T18:00:00-04:00"],
+  ["C","Haiti","Scotland","2026-06-13T21:00:00-04:00"],
+  ["C","Scotland","Morocco","2026-06-19T18:00:00-04:00"],
+  ["C","Brazil","Haiti","2026-06-19T20:30:00-04:00"],
+  ["C","Scotland","Brazil","2026-06-24T18:00:00-04:00"],
+  ["C","Morocco","Haiti","2026-06-24T18:00:00-04:00"],
+  ["D","United States","Paraguay","2026-06-12T21:00:00-04:00"],
+  ["D","Australia","Türkiye","2026-06-13T00:00:00-04:00"],
+  ["D","United States","Australia","2026-06-19T15:00:00-04:00"],
+  ["D","Türkiye","Paraguay","2026-06-19T23:00:00-04:00"],
+  ["D","Türkiye","United States","2026-06-25T22:00:00-04:00"],
+  ["D","Paraguay","Australia","2026-06-25T22:00:00-04:00"],
+  ["E","Germany","Curaçao","2026-06-14T13:00:00-04:00"],
+  ["E","Côte d'Ivoire","Ecuador","2026-06-14T19:00:00-04:00"],
+  ["E","Germany","Côte d'Ivoire","2026-06-20T16:00:00-04:00"],
+  ["E","Ecuador","Curaçao","2026-06-20T20:00:00-04:00"],
+  ["E","Curaçao","Côte d'Ivoire","2026-06-25T16:00:00-04:00"],
+  ["E","Ecuador","Germany","2026-06-25T16:00:00-04:00"],
+  ["F","Netherlands","Japan","2026-06-14T16:00:00-04:00"],
+  ["F","Sweden","Tunisia","2026-06-14T22:00:00-04:00"],
+  ["F","Netherlands","Sweden","2026-06-20T13:00:00-04:00"],
+  ["F","Tunisia","Japan","2026-06-20T00:00:00-04:00"],
+  ["F","Japan","Sweden","2026-06-25T19:00:00-04:00"],
+  ["F","Tunisia","Netherlands","2026-06-25T19:00:00-04:00"],
+  ["G","Belgium","Egypt","2026-06-15T15:00:00-04:00"],
+  ["G","Iran","New Zealand","2026-06-15T21:00:00-04:00"],
+  ["G","Belgium","Iran","2026-06-21T15:00:00-04:00"],
+  ["G","New Zealand","Egypt","2026-06-21T21:00:00-04:00"],
+  ["G","Egypt","Iran","2026-06-26T23:00:00-04:00"],
+  ["G","New Zealand","Belgium","2026-06-26T23:00:00-04:00"],
+  ["H","Spain","Cape Verde","2026-06-15T12:00:00-04:00"],
+  ["H","Saudi Arabia","Uruguay","2026-06-15T18:00:00-04:00"],
+  ["H","Spain","Saudi Arabia","2026-06-21T12:00:00-04:00"],
+  ["H","Uruguay","Cape Verde","2026-06-21T18:00:00-04:00"],
+  ["H","Cape Verde","Saudi Arabia","2026-06-26T20:00:00-04:00"],
+  ["H","Uruguay","Spain","2026-06-26T20:00:00-04:00"],
+  ["I","France","Senegal","2026-06-16T15:00:00-04:00"],
+  ["I","Iraq","Norway","2026-06-16T18:00:00-04:00"],
+  ["I","France","Iraq","2026-06-22T17:00:00-04:00"],
+  ["I","Norway","Senegal","2026-06-22T20:00:00-04:00"],
+  ["I","Norway","France","2026-06-26T15:00:00-04:00"],
+  ["I","Senegal","Iraq","2026-06-26T15:00:00-04:00"],
+  ["J","Argentina","Algeria","2026-06-16T21:00:00-04:00"],
+  ["J","Austria","Jordan","2026-06-16T00:00:00-04:00"],
+  ["J","Argentina","Austria","2026-06-22T13:00:00-04:00"],
+  ["J","Jordan","Algeria","2026-06-22T23:00:00-04:00"],
+  ["J","Jordan","Argentina","2026-06-27T22:00:00-04:00"],
+  ["J","Algeria","Austria","2026-06-27T22:00:00-04:00"],
+  ["K","Portugal","DR Congo","2026-06-17T13:00:00-04:00"],
+  ["K","Uzbekistan","Colombia","2026-06-17T22:00:00-04:00"],
+  ["K","Portugal","Uzbekistan","2026-06-23T13:00:00-04:00"],
+  ["K","Colombia","DR Congo","2026-06-23T22:00:00-04:00"],
+  ["K","Colombia","Portugal","2026-06-27T19:30:00-04:00"],
+  ["K","DR Congo","Uzbekistan","2026-06-27T19:30:00-04:00"],
+  ["L","England","Croatia","2026-06-17T16:00:00-04:00"],
+  ["L","Ghana","Panama","2026-06-17T19:00:00-04:00"],
+  ["L","England","Ghana","2026-06-23T16:00:00-04:00"],
+  ["L","Panama","Croatia","2026-06-23T19:00:00-04:00"],
+  ["L","Panama","England","2026-06-27T17:00:00-04:00"],
+  ["L","Croatia","Ghana","2026-06-27T17:00:00-04:00"]
+];
+const GROUP_FIXTURES = (function(){const c={};return RAW_FIXTURES.map(([g,h,a,ko])=>{
+  c[g]=(c[g]||0)+1; return {key:g+c[g], group:g, home:h, away:a, ko:ko, sort:Math.floor(new Date(ko).getTime()/60000)};
+});})();
+
+const DEFAULT_SCORING = {exact:5, gd:3, tendency:2, position:1};
+
+/* ============================================================
+   3) STATE + SUPABASE
+   ============================================================ */
+const configured = SUPABASE_URL.startsWith("http") && SUPABASE_ANON_KEY.length>20;
+let db = configured ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY) : null;
+
+const S = {
+  me:null,                 // {id,name,pin}
+  cfg:null,                // config row
+  matches:[],              // alle Spiele (DB)
+  myPreds:{},              // match_key -> {pred_home,pred_away}
+  myOrders:{},             // group_code -> [t1,t2,t3,t4]
+  players:[],
+  finishedPreds:[],        // {player_id,match_key,pred_home,pred_away} (nur beendete Spiele)
+  completedOrders:[],      // group_predictions (nur abgeschlossene Gruppen)
+  tab:"lb",
+  adminAuthed:false
+};
+
+/* ---------- Helpers ---------- */
+const $ = s=>document.querySelector(s);
+const el = (h)=>{const d=document.createElement('div');d.innerHTML=h.trim();return d.firstElementChild;};
+const esc = s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);}
+function norm(s){return String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z ]/g,"").replace(/\s+/g," ").trim();}
+function isPlaceholder(s){return /\d|winner|sieger|runner|best|third|3rd|\bw[a-l]\b|\br[0-9]|loser|tbd|group|match|qualifier|play-?off|\bvs\b|to be/i.test(String(s||""));}
+function canon(name){const n=norm(name);if(SYNONYMS[n])return SYNONYMS[n];
+  for(const t of Object.keys(TEAM2GROUP)){if(norm(t)===n)return t;}
+  // lockerer Teiltreffer nur für ausreichend lange Namen (verhindert Fehltreffer bei Platzhaltern)
+  if(n.length>=5){for(const t of Object.keys(TEAM2GROUP)){if(norm(t).includes(n))return t;}}
+  return name;}
+function flag(t){return FLAGS[t]||"🏳️";}
+function groupOf(home,away){const g=TEAM2GROUP[home];return (g && g===TEAM2GROUP[away])?g:null;}
+function fmtKick(iso){if(!iso)return"";const d=new Date(iso);if(isNaN(d))return"";
+  return d.toLocaleString('de-CH',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}
+function isLocked(m){if(m.status==='finished')return true;if(!m.kickoff)return false;return new Date(m.kickoff)<=new Date();}
+function tendency(h,a){return h>a?'H':(h<a?'A':'D');}
+function matchPoints(ph,pa,rh,ra,sc){
+  if(ph==null||pa==null||rh==null||ra==null)return 0;
+  if(ph===rh&&pa===ra)return sc.exact;
+  if(tendency(ph,pa)!==tendency(rh,ra))return 0;
+  if((ph-pa)===(rh-ra))return sc.gd;
+  return sc.tendency;
+}
+
+/* ---------- Standings ---------- */
+function groupMatches(g){return S.matches.filter(m=>m.stage==='group'&&m.group_code===g);}
+function groupFinished(g){const ms=groupMatches(g);return ms.length>=6 && ms.filter(m=>m.status==='finished').length>=6;}
+function computeStandings(g){
+  const stats={};GROUPS[g].forEach(t=>stats[t]={t,pld:0,w:0,d:0,l:0,gf:0,ga:0,pts:0});
+  groupMatches(g).filter(m=>m.status==='finished'&&m.home_score!=null&&m.away_score!=null).forEach(m=>{
+    const h=stats[m.home_team],a=stats[m.away_team];if(!h||!a)return;
+    h.pld++;a.pld++;h.gf+=m.home_score;h.ga+=m.away_score;a.gf+=m.away_score;a.ga+=m.home_score;
+    if(m.home_score>m.away_score){h.pts+=3;h.w++;a.l++;}
+    else if(m.home_score<m.away_score){a.pts+=3;a.w++;h.l++;}
+    else{h.pts++;a.pts++;h.d++;a.d++;}
+  });
+  const arr=Object.values(stats).map(s=>({...s,gd:s.gf-s.ga}));
+  arr.sort((x,y)=>y.pts-x.pts||y.gd-x.gd||y.gf-x.gf||x.t.localeCompare(y.t));
+  return arr;
+}
+
+/* ---------- Leaderboard ---------- */
+function leaderboard(){
+  const sc=S.cfg?.scoring||DEFAULT_SCORING;
+  const finishedByKey={};S.matches.forEach(m=>{if(m.status==='finished')finishedByKey[m.match_key]=m;});
+  const completedGroups=Object.keys(GROUPS).filter(groupFinished);
+  const actualOrder={};completedGroups.forEach(g=>actualOrder[g]=computeStandings(g).map(s=>s.t));
+  const byPlayer={};S.players.forEach(p=>byPlayer[p.id]={id:p.id,name:p.name,match:0,place:0});
+  S.finishedPreds.forEach(pr=>{
+    const m=finishedByKey[pr.match_key];const rec=byPlayer[pr.player_id];if(!m||!rec)return;
+    rec.match+=matchPoints(pr.pred_home,pr.pred_away,m.home_score,m.away_score,sc);
+  });
+  S.completedOrders.forEach(o=>{
+    const rec=byPlayer[o.player_id];const act=actualOrder[o.group_code];if(!rec||!act)return;
+    (o.ordering||[]).forEach((t,i)=>{if(act[i]===t)rec.place+=sc.position;});
+  });
+  const arr=Object.values(byPlayer).map(r=>({...r,total:r.match+r.place}));
+  arr.sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
+  return {rows:arr,completedGroups};
+}
+
+/* ============================================================
+   4) DATEN LADEN
+   ============================================================ */
+async function loadConfig(){
+  const {data,error}=await db.from('config').select('*').eq('id',1).maybeSingle();
+  if(error)throw error;
+  S.cfg=data;
+  if(data){
+    $('#leagueSub').textContent=data.league_name||'USA · Kanada · Mexiko';
+    if(!data.scoring)S.cfg.scoring=DEFAULT_SCORING;
+  }
+}
+async function loadMatches(){
+  const {data,error}=await db.from('matches').select('*').order('sort_order',{ascending:true}).order('kickoff',{ascending:true});
+  if(error)throw error;
+  S.matches=data||[];
+}
+async function loadPlayers(){
+  const {data}=await db.from('players').select('id,name');S.players=data||[];
+}
+async function loadScoringInputs(){
+  // beendete Spiele -> deren Tipps aller Spieler laden (Fairness: offene Tipps bleiben privat)
+  const finishedKeys=S.matches.filter(m=>m.status==='finished').map(m=>m.match_key);
+  if(finishedKeys.length){
+    const {data}=await db.from('predictions').select('player_id,match_key,pred_home,pred_away').in('match_key',finishedKeys);
+    S.finishedPreds=data||[];
+  }else S.finishedPreds=[];
+  const completed=Object.keys(GROUPS).filter(groupFinished);
+  if(completed.length){
+    const {data}=await db.from('group_predictions').select('player_id,group_code,ordering').in('group_code',completed);
+    S.completedOrders=data||[];
+  }else S.completedOrders=[];
+}
+async function loadMine(){
+  if(!S.me)return;
+  const {data:p}=await db.from('predictions').select('match_key,pred_home,pred_away').eq('player_id',S.me.id);
+  S.myPreds={};(p||[]).forEach(r=>S.myPreds[r.match_key]={pred_home:r.pred_home,pred_away:r.pred_away});
+  const {data:o}=await db.from('group_predictions').select('group_code,ordering').eq('player_id',S.me.id);
+  S.myOrders={};(o||[]).forEach(r=>S.myOrders[r.group_code]=r.ordering);
+}
+
+/* ---------- API: Spielplan + Resultate ---------- */
+function buildMatchesFromApi(events, existing){
+  const exMap={};(existing||[]).forEach(m=>exMap[m.match_key]=m);
+  const rows=[];
+  (events||[]).forEach((e,idx)=>{
+    if(!e.strHomeTeam||!e.strAwayTeam)return;
+    if(isPlaceholder(e.strHomeTeam)||isPlaceholder(e.strAwayTeam))return; // Platzhalter (z.B. "Winner Group A") ignorieren
+    const home=canon(e.strHomeTeam),away=canon(e.strAwayTeam);
+    if(!TEAM2GROUP[home]||!TEAM2GROUP[away])return; // nur erkannte WM-Teams übernehmen
+    const g=groupOf(home,away);
+    const key='tsdb_'+e.idEvent;
+    const prev=exMap[key]||{};
+    let hs=(e.intHomeScore!=null&&e.intHomeScore!=='')?parseInt(e.intHomeScore,10):null;
+    let as=(e.intAwayScore!=null&&e.intAwayScore!=='')?parseInt(e.intAwayScore,10):null;
+    const kickoff=e.strTimestamp||(e.dateEvent?(e.dateEvent+'T'+((e.strTime&&e.strTime!=='00:00:00')?e.strTime:'12:00:00')):null);
+    const statusStr=(e.strStatus||'')+' '+(e.strProgress||'');
+    let finished=/FT|Finished|AET|After|Pen|Full/i.test(statusStr) || (hs!=null&&as!=null&&kickoff&&new Date(kickoff)<new Date());
+    // API ohne Score -> bestehenden (evtl. manuell gesetzten) Wert behalten
+    if(hs==null&&prev.home_score!=null){hs=prev.home_score;as=prev.away_score;finished=prev.status==='finished';}
+    rows.push({
+      match_key:key, stage:g?'group':'ko', group_code:g,
+      round_label:g?null:(e.strEvent||null),
+      home_team:home, away_team:away, kickoff,
+      home_score:hs, away_score:as, status:finished?'finished':'scheduled',
+      sort_order:idx, updated_at:new Date().toISOString()
+    });
+  });
+  return rows;
+}
+async function fetchSchedule(apiKey){
+  // Gratis-Key liefert pro Methode nur ein Fenster -> mehrere Endpunkte kombinieren.
+  // Wird wiederholt aufgerufen; per upsert akkumuliert sich so der ganze Spielplan.
+  const k=encodeURIComponent(apiKey||'123');
+  const base=`https://www.thesportsdb.com/api/v1/json/${k}/`;
+  const urls=[
+    `eventsnextleague.php?id=${WC_LEAGUE_ID}`,
+    `eventspastleague.php?id=${WC_LEAGUE_ID}`,
+    `eventsseason.php?id=${WC_LEAGUE_ID}&s=${WC_SEASON}`
+  ];
+  const map={};let okAny=false,lastErr=null;
+  for(const u of urls){
+    try{
+      const r=await fetch(base+u);
+      if(!r.ok){lastErr=new Error('HTTP '+r.status);continue;}
+      const j=await r.json();okAny=true;
+      (j&&j.events?j.events:[]).forEach(e=>{if(e&&e.idEvent)map[e.idEvent]=e;});
+    }catch(e){lastErr=e;}
+  }
+  if(!okAny&&lastErr)throw lastErr;
+  return Object.values(map);
+}
+async function importSchedule(apiKey){
+  // Holt API-Events und trägt Resultate in die festen Spiele ein (keine Duplikate).
+  const events=await fetchSchedule(apiKey);
+  if(!events.length)return {count:S.matches.length,results:S.matches.filter(m=>m.status==='finished').length};
+  const groupsDone=Object.keys(GROUPS).every(groupFinished);
+  let updated=0; const koRows=[];
+  for(const e of events){
+    if(isPlaceholder(e.strHomeTeam)||isPlaceholder(e.strAwayTeam))continue;
+    const home=canon(e.strHomeTeam),away=canon(e.strAwayTeam);
+    if(!TEAM2GROUP[home]||!TEAM2GROUP[away])continue;
+    let hs=(e.intHomeScore!=null&&e.intHomeScore!=='')?parseInt(e.intHomeScore,10):null;
+    let as=(e.intAwayScore!=null&&e.intAwayScore!=='')?parseInt(e.intAwayScore,10):null;
+    const kickoff=e.strTimestamp||null;
+    const statusStr=(e.strStatus||'')+' '+(e.strProgress||'');
+    const finishedFlag=/FT|Finished|AET|After|Pen|Full/i.test(statusStr)||(hs!=null&&as!=null&&kickoff&&new Date(kickoff)<new Date());
+    const g=groupOf(home,away);
+    if(g){
+      const fx=S.matches.find(m=>m.stage==='group'&&((m.home_team===home&&m.away_team===away)||(m.home_team===away&&m.away_team===home)));
+      if(!fx)continue;
+      let H=hs,A=as; if(fx.home_team===away){H=as;A=hs;} // Orientierung angleichen
+      const upd={updated_at:new Date().toISOString()}; let changed=false;
+      if(H!=null&&A!=null&&(fx.home_score!==H||fx.away_score!==A)){upd.home_score=H;upd.away_score=A;changed=true;}
+      if(finishedFlag&&fx.status!=='finished'){upd.status='finished';changed=true;}
+      if(kickoff&&!fx.kickoff){upd.kickoff=kickoff;changed=true;}
+      if(changed){const {error}=await db.from('matches').update(upd).eq('match_key',fx.match_key);if(!error)updated++;}
+    } else {
+      // echtes K.-o.-Spiel: erst nach Abschluss der Gruppenphase zulassen
+      if(!groupsDone)continue;
+      koRows.push({match_key:'tsdb_'+e.idEvent,stage:'ko',group_code:null,round_label:e.strEvent||null,
+        home_team:home,away_team:away,kickoff,home_score:hs,away_score:as,
+        status:finishedFlag?'finished':'scheduled',sort_order:9000,updated_at:new Date().toISOString()});
+    }
+  }
+  if(koRows.length){await db.from('matches').upsert(koRows,{onConflict:'match_key'});}
+  if(updated||koRows.length)await loadMatches();
+  return {count:S.matches.length,results:S.matches.filter(m=>m.status==='finished').length};
+}
+// Stellt sicher, dass der feste Gruppen-Spielplan vorhanden ist (und entfernt alte API-Duplikate)
+async function ensureFixtures(){
+  const legacy=S.matches.filter(m=>m.stage==='group'&&String(m.match_key).startsWith('tsdb_'));
+  if(legacy.length){try{await db.from('matches').delete().in('match_key',legacy.map(m=>m.match_key));}catch(e){console.warn('Legacy:',e.message);}}
+  const have=new Set(S.matches.filter(m=>!String(m.match_key).startsWith('tsdb_')).map(m=>m.match_key));
+  const rows=GROUP_FIXTURES.filter(f=>!have.has(f.key)).map(f=>({
+    match_key:f.key,stage:'group',group_code:f.group,round_label:null,
+    home_team:f.home,away_team:f.away,kickoff:f.ko,
+    home_score:null,away_score:null,status:'scheduled',sort_order:f.sort,updated_at:new Date().toISOString()
+  }));
+  if(rows.length){for(let i=0;i<rows.length;i+=200){await db.from('matches').upsert(rows.slice(i,i+200),{onConflict:'match_key'});}}
+  if(rows.length||legacy.length)await loadMatches();
+}
+
+/* ============================================================
+   5) SPEICHERN (Tipps)
+   ============================================================ */
+let saveTimers={};
+async function savePrediction(key){
+  if(!S.me){toast('Bitte zuerst anmelden (Tab „Ich“)');return;}
+  const m=S.matches.find(x=>x.match_key===key);
+  if(m&&isLocked(m)){toast('Spiel bereits gestartet – Tipp gesperrt');render();return;}
+  const hi=document.querySelector(`input[data-h="${CSS.escape(key)}"]`);
+  const ai=document.querySelector(`input[data-a="${CSS.escape(key)}"]`);
+  const ph=hi.value===''?null:parseInt(hi.value,10);
+  const pa=ai.value===''?null:parseInt(ai.value,10);
+  if(ph==null||pa==null)return; // erst speichern, wenn beide gesetzt
+  S.myPreds[key]={pred_home:ph,pred_away:pa};
+  const {error}=await db.from('predictions').upsert(
+    {player_id:S.me.id,match_key:key,pred_home:ph,pred_away:pa,updated_at:new Date().toISOString()},
+    {onConflict:'player_id,match_key'});
+  if(error){toast('Fehler beim Speichern');console.error(error);}else toast('Tipp gespeichert');
+}
+function queueSave(key){clearTimeout(saveTimers[key]);saveTimers[key]=setTimeout(()=>savePrediction(key),500);}
+
+async function saveOrder(g){
+  if(!S.me){toast('Bitte zuerst anmelden');return;}
+  const ord=S.myOrders[g];
+  const {error}=await db.from('group_predictions').upsert(
+    {player_id:S.me.id,group_code:g,ordering:ord,updated_at:new Date().toISOString()},
+    {onConflict:'player_id,group_code'});
+  if(error){toast('Fehler beim Speichern');console.error(error);}else toast('Platzierung gespeichert');
+}
+function groupLockedForPlacement(g){
+  const ms=groupMatches(g);if(!ms.length)return false;
+  const first=ms.map(m=>m.kickoff).filter(Boolean).sort()[0];
+  return first?new Date(first)<=new Date():false;
+}
+
+/* ============================================================
+   6) RENDERING
+   ============================================================ */
+function setTab(t){S.tab=t;document.querySelectorAll('#nav button').forEach(b=>b.classList.toggle('active',b.dataset.tab===t));render();}
+
+function render(){
+  const p=$('#panel');
+  $('#meChip').innerHTML=S.me?`👤 <b>${esc(S.me.name)}</b>`:'nicht angemeldet';
+  if(!configured){p.innerHTML='';return;}
+  if(S.tab==='lb')p.innerHTML=renderLeaderboard();
+  else if(S.tab==='groups')renderGroups(p);
+  else if(S.tab==='placement')renderPlacement(p);
+  else if(S.tab==='ko')renderKO(p);
+  else if(S.tab==='me')renderMe(p);
+  else if(S.tab==='admin')renderAdmin(p);
+}
+
+function renderLeaderboard(){
+  const {rows,completedGroups}=leaderboard();
+  const anyFinished=S.matches.some(m=>m.status==='finished');
+  let body=rows.map((r,i)=>{
+    const medal=i<3?`medal${i+1}`:'';
+    const meCls=S.me&&r.id===S.me.id?'me':'';
+    return `<tr class="${meCls}"><td class="rank ${medal}">${i+1}</td><td>${esc(r.name)}</td>
+      <td class="num">${r.match}</td><td class="num">${r.place}</td><td class="num pts">${r.total}</td></tr>`;
+  }).join('');
+  if(!rows.length)body=`<tr><td colspan="5" class="empty">Noch keine Mitspieler. Sei der/die Erste im Tab „Ich“.</td></tr>`;
+  return `<div class="card">
+    <h2>Rangliste</h2>
+    <div class="hint">${rows.length} Mitspieler · ${anyFinished?'aktualisiert sich automatisch nach jedem Resultat':'Punkte erscheinen, sobald Spiele beendet sind'}.</div>
+    <table class="lb"><thead><tr><th class="rank">#</th><th>Name</th><th class="num">Spiele</th><th class="num">Platz.</th><th class="num">Total</th></tr></thead>
+    <tbody>${body}</tbody></table>
+    ${completedGroups.length?`<div class="note" style="margin-top:10px">Platzierungspunkte vergeben für abgeschlossene Gruppen: ${completedGroups.join(', ')}.</div>`:''}
+  </div>
+  <details class="card"><summary>Punkteregeln</summary>
+    <div class="hint" style="margin-top:10px">Pro Spiel zählt die <b>höchste</b> zutreffende Stufe (nicht kumulativ):</div>
+    <table class="lb"><tbody>
+      <tr><td>Exaktes Resultat</td><td class="num pts">${S.cfg?.scoring?.exact??5}</td></tr>
+      <tr><td>Richtige Tordifferenz (richtiger Sieger)</td><td class="num pts">${S.cfg?.scoring?.gd??3}</td></tr>
+      <tr><td>Richtiger Sieger / Tendenz</td><td class="num pts">${S.cfg?.scoring?.tendency??2}</td></tr>
+      <tr><td>Pro korrekt getippter Gruppen-Platzierung</td><td class="num pts">${S.cfg?.scoring?.position??1}</td></tr>
+    </tbody></table>
+    <div class="note" style="margin-top:8px">Gruppentabelle nach FIFA-Reihenfolge: Punkte → Tordifferenz → erzielte Tore. (Direkter Vergleich / Fairplay / Los sind nicht modelliert – betrifft nur seltene Gleichstände.)</div>
+  </details>`;
+}
+
+function scoreMatchHTML(m){
+  const locked=isLocked(m);
+  const pr=S.myPreds[m.match_key]||{};
+  const sc=S.cfg?.scoring||DEFAULT_SCORING;
+  const hv=pr.pred_home!=null?pr.pred_home:'';
+  const av=pr.pred_away!=null?pr.pred_away:'';
+  let statusLeft='', statusRight='';
+  if(m.status==='finished'&&m.home_score!=null){
+    statusLeft=`<span class="res">Endstand ${m.home_score}:${m.away_score}</span>`;
+    if(pr.pred_home!=null){const pts=matchPoints(pr.pred_home,pr.pred_away,m.home_score,m.away_score,sc);
+      statusRight=`<span class="pts">+${pts} Pkt</span>`;}
+  }else{
+    statusLeft=`<span>${m.kickoff?fmtKick(m.kickoff):''}</span>`;
+    statusRight=locked?'<span class="pill live">gesperrt</span>':'';
+  }
+  return `<div class="match ${locked?'locked':''}">
+    <div class="team home"><span class="nm">${esc(m.home_team)}</span><span class="flag">${flag(m.home_team)}</span></div>
+    <div class="score">
+      <input type="number" inputmode="numeric" min="0" max="30" data-h="${esc(m.match_key)}" value="${hv}" ${locked?'disabled':''} aria-label="Tore ${esc(m.home_team)}">
+      <span class="colon">:</span>
+      <input type="number" inputmode="numeric" min="0" max="30" data-a="${esc(m.match_key)}" value="${av}" ${locked?'disabled':''} aria-label="Tore ${esc(m.away_team)}">
+    </div>
+    <div class="team away"><span class="flag">${flag(m.away_team)}</span><span class="nm">${esc(m.away_team)}</span></div>
+    <div class="mstatus">${statusLeft}${statusRight||'<span></span>'}</div>
+  </div>`;
+}
+
+function renderGroups(p){
+  if(!S.matches.some(m=>m.stage==='group')){
+    p.innerHTML=`<div class="card"><h2>Gruppen tippen</h2><div class="empty">Spielplan noch nicht geladen.<br>Admin: Tab „Admin“ → „Spielplan &amp; Resultate abrufen“.</div></div>`;
+    return;
+  }
+  let html=`<div class="card"><h2>Gruppen tippen</h2><div class="hint">Alle Gruppenspiele sind tippbar. Tipp pro Spiel eingeben – wird automatisch gespeichert. Gesperrt ab Anpfiff.</div>`;
+  Object.keys(GROUPS).forEach(g=>{
+    const ms=groupMatches(g).slice().sort((a,b)=>(a.sort_order-b.sort_order)||String(a.kickoff).localeCompare(String(b.kickoff)));
+    if(!ms.length)return;
+    html+=`<div class="group-title"><h3>Gruppe ${g}</h3><span>${GROUPS[g].map(flag).join(' ')}</span></div>`;
+    html+=ms.map(scoreMatchHTML).join('');
+  });
+  html+=`</div>`;
+  p.innerHTML=html;
+  attachScoreInputs(p);
+}
+
+function renderKO(p){
+  const ms=S.matches.filter(m=>m.stage!=='group').slice().sort((a,b)=>(a.sort_order-b.sort_order)||String(a.kickoff).localeCompare(String(b.kickoff)));
+  if(!ms.length){p.innerHTML=`<div class="card"><h2>K.-o.-Runde</h2><div class="empty">K.-o.-Spiele erscheinen, sobald die Paarungen feststehen und der Admin den Spielplan aktualisiert.</div></div>`;return;}
+  let html=`<div class="card"><h2>K.-o.-Runde</h2><div class="hint">Getippt wird der reguläre Spielstand (ohne Elfmeterschiessen).</div>`;
+  html+=ms.map(scoreMatchHTML).join('');
+  html+=`</div>`;
+  p.innerHTML=html;
+  attachScoreInputs(p);
+}
+
+function attachScoreInputs(root){
+  root.querySelectorAll('input[data-h],input[data-a]').forEach(inp=>{
+    const key=inp.getAttribute('data-h')||inp.getAttribute('data-a');
+    inp.addEventListener('change',()=>savePrediction(key));
+  });
+}
+
+function renderPlacement(p){
+  if(!S.matches.some(m=>m.stage==='group')){
+    p.innerHTML=`<div class="card"><h2>Platzierung tippen</h2><div class="empty">Spielplan noch nicht geladen (siehe Tab „Admin“). Die Gruppen kannst du trotzdem unten ordnen.</div></div>`;
+  }
+  let html=`<div class="card"><h2>Platzierung tippen</h2><div class="hint">Bring die 4 Teams jeder Gruppe in die erwartete Endreihenfolge (1 = Gruppensieger). Plätze 1–2 = Achtelfinal-Quali. Gesperrt ab dem ersten Gruppenspiel.</div>`;
+  Object.keys(GROUPS).forEach(g=>{
+    if(!S.myOrders[g])S.myOrders[g]=GROUPS[g].slice();
+    const ord=S.myOrders[g];
+    const locked=groupLockedForPlacement(g);
+    const finished=groupFinished(g);
+    const actual=finished?computeStandings(g).map(s=>s.t):null;
+    html+=`<div class="group-title"><h3>Gruppe ${g}</h3>${finished?'<span class="pill done">abgeschlossen</span>':(locked?'<span class="pill live">gesperrt</span>':'')}</div>`;
+    html+=`<ul class="order-list" data-group="${g}">`;
+    ord.forEach((t,i)=>{
+      let mark='';
+      if(actual){const correct=actual[i]===t;mark=correct?' ✓':' ✗';}
+      html+=`<li class="order-row ${i<2?'qual':''}">
+        <span class="pos">${i+1}</span>
+        <span class="grow"><span class="flag">${flag(t)}</span><span class="nm">${esc(t)}${mark}</span> ${i<2?'<span class="qbadge">Quali</span>':''}</span>
+        ${locked?'':`<span class="arrows">
+          <button data-up="${g}:${i}" ${i===0?'disabled':''} aria-label="hoch">▲</button>
+          <button data-down="${g}:${i}" ${i===3?'disabled':''} aria-label="runter">▼</button>
+        </span>`}
+      </li>`;
+    });
+    html+=`</ul>`;
+  });
+  html+=`</div>`;
+  p.innerHTML=html;
+  p.querySelectorAll('button[data-up],button[data-down]').forEach(b=>{
+    b.addEventListener('click',()=>{
+      const up=b.hasAttribute('data-up');
+      const [g,iStr]=(b.getAttribute('data-up')||b.getAttribute('data-down')).split(':');
+      const i=parseInt(iStr,10);const ord=S.myOrders[g];const j=up?i-1:i+1;
+      if(j<0||j>3)return;[ord[i],ord[j]]=[ord[j],ord[i]];
+      saveOrder(g);render();
+    });
+  });
+}
+
+function renderMe(p){
+  if(S.me){
+    p.innerHTML=`<div class="card"><h2>Angemeldet</h2>
+      <div class="hint">Du tippst als <b>${esc(S.me.name)}</b>. Auf anderen Geräten meldest du dich mit gleichem Namen + PIN an.</div>
+      <button class="btn ghost" id="logout">Abmelden</button></div>`;
+    $('#logout').addEventListener('click',()=>{localStorage.removeItem('wm26_me');S.me=null;S.myPreds={};S.myOrders={};toast('Abgemeldet');render();});
+    return;
+  }
+  p.innerHTML=`<div class="card"><h2>Mitmachen</h2>
+    <div class="hint">Name wählen und eine persönliche PIN setzen (4–8 Zeichen). Mit Name + PIN tippst du von jedem Gerät.</div>
+    <label>Name</label><input type="text" id="inName" maxlength="24" placeholder="z.B. Rhe">
+    <label>PIN</label><input type="password" id="inPin" maxlength="8" placeholder="persönliche PIN">
+    <div class="row" style="margin-top:14px"><button class="btn" id="loginBtn">Anmelden / Registrieren</button></div>
+    <div class="note" style="margin-top:10px">Hinweis: Dies ist ein Familien-/Freundes-Tippspiel ohne echte Kontosicherheit. Die PIN schützt deine Tipps nur leicht.</div>
+  </div>`;
+  $('#loginBtn').addEventListener('click',login);
+}
+async function login(){
+  const name=$('#inName').value.trim();const pin=$('#inPin').value.trim();
+  if(name.length<2){toast('Name zu kurz');return;}
+  if(pin.length<4){toast('PIN min. 4 Zeichen');return;}
+  const {data:existing}=await db.from('players').select('*').eq('name',name).maybeSingle();
+  if(existing){
+    if(existing.pin!==pin){toast('Falsche PIN für diesen Namen');return;}
+    S.me=existing;
+  }else{
+    const {data,error}=await db.from('players').insert({name,pin}).select().single();
+    if(error){toast('Name evtl. schon vergeben');console.error(error);return;}
+    S.me=data;
+  }
+  localStorage.setItem('wm26_me',JSON.stringify({id:S.me.id,name:S.me.name,pin:S.me.pin}));
+  await loadMine();await loadPlayers();
+  toast('Willkommen, '+S.me.name);
+  setTab('groups');
+}
+
+/* ---------- Admin ---------- */
+function renderAdmin(p){
+  // Erst-Setup
+  if(!S.cfg||!S.cfg.admin_pin){
+    p.innerHTML=`<div class="card"><h2>Erst-Einrichtung</h2>
+      <div class="hint">Einmalig den Namen des Tippspiels und eine Admin-PIN festlegen.</div>
+      <label>Name des Tippspiels</label><input type="text" id="setName" value="${esc(S.cfg?.league_name||'WM 2026 Tippspiel')}">
+      <label>Admin-PIN</label><input type="password" id="setPin" maxlength="12" placeholder="Admin-PIN">
+      <div class="row" style="margin-top:14px"><button class="btn" id="setupBtn">Speichern</button></div></div>`;
+    $('#setupBtn').addEventListener('click',async()=>{
+      const ln=$('#setName').value.trim()||'WM 2026 Tippspiel';const pin=$('#setPin').value.trim();
+      if(pin.length<4){toast('Admin-PIN min. 4 Zeichen');return;}
+      const {error}=await db.from('config').upsert({id:1,league_name:ln,admin_pin:pin,scoring:DEFAULT_SCORING,api_key:'123'},{onConflict:'id'});
+      if(error){toast('Fehler');console.error(error);return;}
+      await loadConfig();S.adminAuthed=true;toast('Eingerichtet');render();
+    });
+    return;
+  }
+  if(!S.adminAuthed){
+    p.innerHTML=`<div class="card"><h2>Admin</h2><div class="hint">Admin-PIN eingeben.</div>
+      <label>Admin-PIN</label><input type="password" id="adPin" maxlength="12">
+      <div class="row" style="margin-top:14px"><button class="btn" id="adBtn">Entsperren</button></div></div>`;
+    $('#adBtn').addEventListener('click',()=>{
+      if($('#adPin').value.trim()===S.cfg.admin_pin){S.adminAuthed=true;render();}
+      else toast('Falsche Admin-PIN');
+    });
+    return;
+  }
+  const sc=S.cfg.scoring||DEFAULT_SCORING;
+  const finished=S.matches.filter(m=>m.status==='finished').length;
+  p.innerHTML=`
+  <div class="card"><h2>Resultate &amp; Spielplan</h2>
+    <div class="hint">${S.matches.length} Spiele im System, davon ${finished} mit Resultat.</div>
+    <label>TheSportsDB API-Key</label>
+    <input type="text" id="apiKey" value="${esc(S.cfg.api_key||'123')}">
+    <div class="note" style="margin:6px 0 12px">Der komplette Gruppen-Spielplan (alle 72 Spiele) ist fest eingebaut – Tippen ist sofort möglich. Dieser Abruf holt nur die <b>Resultate</b> (und später die K.-o.-Paarungen) von TheSportsDB. Gratis-Key ist <code>123</code>; er liefert pro Abruf ein Fenster der zuletzt gespielten Partien. Nach jeder Spielrunde abrufen – oder Resultate unten manuell eintragen.</div>
+    <div class="row"><button class="btn gold" id="fetchBtn">Spielplan &amp; Resultate abrufen</button>
+    <button class="btn ghost sm" id="refreshBtn">Neu laden</button></div>
+    <div id="fetchMsg" class="note" style="margin-top:10px"></div>
+  </div>
+
+  <div class="card"><h2>Resultate manuell</h2>
+    <div class="hint">Endstand eintragen und auf „beendet“ setzen. Wird sofort in die Punkte einberechnet.</div>
+    <div id="adminMatches"></div>
+  </div>
+
+  <div class="card"><h2>Punkteregeln</h2>
+    <div class="row">
+      <div style="flex:1;min-width:120px"><label>Exaktes Resultat</label><input type="number" id="scExact" value="${sc.exact}"></div>
+      <div style="flex:1;min-width:120px"><label>Tordifferenz</label><input type="number" id="scGd" value="${sc.gd}"></div>
+    </div>
+    <div class="row">
+      <div style="flex:1;min-width:120px"><label>Tendenz/Sieger</label><input type="number" id="scTend" value="${sc.tendency}"></div>
+      <div style="flex:1;min-width:120px"><label>Platzierung (pro Team)</label><input type="number" id="scPos" value="${sc.position}"></div>
+    </div>
+    <div class="row" style="margin-top:12px"><button class="btn" id="saveScoring">Regeln speichern</button></div>
+  </div>`;
+
+  $('#fetchBtn').addEventListener('click',async()=>{
+    const btn=$('#fetchBtn');btn.disabled=true;$('#fetchMsg').textContent='Abruf läuft…';
+    try{
+      const key=$('#apiKey').value.trim()||'123';
+      if(key!==S.cfg.api_key){await db.from('config').update({api_key:key}).eq('id',1);S.cfg.api_key=key;}
+      const res=await importSchedule(key);
+      if(res.count===0){$('#fetchMsg').innerHTML='Die API lieferte 0 Spiele. Möglich: Saison-Methode ist auf dem Gratis-Key gesperrt, oder noch keine Daten. Bitte manuell erfassen oder Premium-Key testen.';}
+      else{$('#fetchMsg').innerHTML=`Importiert: ${res.count} Spiele, ${res.results} mit Resultat.`;await loadScoringInputs();}
+      renderAdmin($('#panel'));
+    }catch(e){console.error(e);$('#fetchMsg').innerHTML='Abruf fehlgeschlagen: '+esc(e.message)+'. (CORS/Netz/Key prüfen, oder manuell erfassen.)';btn.disabled=false;}
+  });
+  $('#refreshBtn').addEventListener('click',async()=>{await loadAll();renderAdmin($('#panel'));toast('Neu geladen');});
+  $('#saveScoring').addEventListener('click',async()=>{
+    const ns={exact:+$('#scExact').value,gd:+$('#scGd').value,tendency:+$('#scTend').value,position:+$('#scPos').value};
+    const {error}=await db.from('config').update({scoring:ns}).eq('id',1);
+    if(error){toast('Fehler');return;}S.cfg.scoring=ns;toast('Regeln gespeichert');
+  });
+  renderAdminMatches();
+}
+function renderAdminMatches(){
+  const host=$('#adminMatches');if(!host)return;
+  if(!S.matches.length){host.innerHTML='<div class="empty">Noch keine Spiele. Erst Spielplan abrufen.</div>';return;}
+  const ms=S.matches.slice().sort((a,b)=>(a.sort_order-b.sort_order)||String(a.kickoff).localeCompare(String(b.kickoff)));
+  host.innerHTML=ms.map(m=>`
+    <div class="match">
+      <div class="team home"><span class="nm">${esc(m.home_team)}</span><span class="flag">${flag(m.home_team)}</span></div>
+      <div class="score">
+        <input type="number" inputmode="numeric" min="0" max="30" data-rh="${esc(m.match_key)}" value="${m.home_score!=null?m.home_score:''}">
+        <span class="colon">:</span>
+        <input type="number" inputmode="numeric" min="0" max="30" data-ra="${esc(m.match_key)}" value="${m.away_score!=null?m.away_score:''}">
+      </div>
+      <div class="team away"><span class="flag">${flag(m.away_team)}</span><span class="nm">${esc(m.away_team)}</span></div>
+      <div class="mstatus">
+        <span>${m.group_code?('Gruppe '+m.group_code):'K.o.'} · ${m.kickoff?fmtKick(m.kickoff):'—'}</span>
+        <button class="btn sm ${m.status==='finished'?'':'ghost'}" data-fin="${esc(m.match_key)}">${m.status==='finished'?'beendet ✓':'als beendet speichern'}</button>
+      </div>
+    </div>`).join('');
+  host.querySelectorAll('button[data-fin]').forEach(b=>{
+    b.addEventListener('click',async()=>{
+      const key=b.getAttribute('data-fin');
+      const rh=host.querySelector(`input[data-rh="${CSS.escape(key)}"]`).value;
+      const ra=host.querySelector(`input[data-ra="${CSS.escape(key)}"]`).value;
+      if(rh===''||ra===''){toast('Beide Tore eingeben');return;}
+      const {error}=await db.from('matches').update({home_score:+rh,away_score:+ra,status:'finished',updated_at:new Date().toISOString()}).eq('match_key',key);
+      if(error){toast('Fehler');console.error(error);return;}
+      await loadMatches();await loadScoringInputs();toast('Resultat gespeichert');renderAdmin($('#panel'));
+    });
+  });
+}
+
+/* ============================================================
+   7) INIT
+   ============================================================ */
+async function backgroundRefresh(){
+  try{
+    const before=S.matches.length;
+    const finishedBefore=S.matches.filter(m=>m.status==='finished').length;
+    await importSchedule(S.cfg?.api_key||'123');
+    await loadScoringInputs();
+    const finishedAfter=S.matches.filter(m=>m.status==='finished').length;
+    if(S.matches.length!==before||finishedAfter!==finishedBefore||S.tab==='lb'){
+      const a=document.activeElement;
+      if(!(a&&a.tagName==='INPUT'))render();
+    }
+  }catch(e){console.warn('Refresh:',e.message);}
+}
+
+async function loadAll(){
+  await loadConfig();
+  await loadMatches();
+  await ensureFixtures(); // festen Gruppen-Spielplan sicherstellen, alte Duplikate entfernen
+  // Bereinigung: Platzhalter / fehlklassifizierte Spiele (unbekannte Teams) entfernen
+  const bad=S.matches.filter(m=>!TEAM2GROUP[m.home_team]||!TEAM2GROUP[m.away_team]);
+  if(bad.length){
+    try{await db.from('matches').delete().in('match_key',bad.map(m=>m.match_key));await loadMatches();}
+    catch(e){console.warn('Cleanup:',e.message);}
+  }
+  // Vor Abschluss der Gruppenphase kann es keine echten K.-o.-Spiele geben -> Altlasten entfernen
+  const groupsDone=Object.keys(GROUPS).every(groupFinished);
+  if(!groupsDone){
+    const ko=S.matches.filter(m=>m.stage!=='group');
+    if(ko.length){
+      try{await db.from('matches').delete().in('match_key',ko.map(m=>m.match_key));await loadMatches();}
+      catch(e){console.warn('KO-Cleanup:',e.message);}
+    }
+  }
+  backgroundRefresh(); // Resultate rollierend aus der API nachziehen (nicht blockierend)
+  await loadPlayers();
+  await loadScoringInputs();
+  if(S.me)await loadMine();
+}
+
+function showSetupWarning(){
+  $('#setupWarn').innerHTML=`<div class="setup-warn">
+    <b>Noch nicht verbunden.</b> Trage oben im Code <code>SUPABASE_URL</code> und <code>SUPABASE_ANON_KEY</code> ein
+    (Werte aus deinem Supabase-Projekt), führe das mitgelieferte SQL aus und lade die Seite neu.
+  </div>`;
+}
+
+document.querySelectorAll('#nav button').forEach(b=>b.addEventListener('click',()=>setTab(b.dataset.tab)));
+
+(async function init(){
+  if(!configured){showSetupWarning();return;}
+  // gespeicherte Anmeldung
+  try{const saved=JSON.parse(localStorage.getItem('wm26_me')||'null');if(saved&&saved.id)S.me=saved;}catch(e){}
+  try{
+    await loadAll();
+  }catch(e){
+    console.error(e);
+    $('#setupWarn').innerHTML=`<div class="setup-warn"><b>Verbindung fehlgeschlagen.</b> Prüfe Supabase-URL/Key und ob das SQL ausgeführt wurde.<br><span class="note">${esc(e.message)}</span></div>`;
+  }
+  render();
+})();
+</script>
+</body>
+</html>
