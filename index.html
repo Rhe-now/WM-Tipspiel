@@ -234,7 +234,7 @@ const RAW_FIXTURES = [
   ["C","Scotland","Brazil","2026-06-24T18:00:00-04:00"],
   ["C","Morocco","Haiti","2026-06-24T18:00:00-04:00"],
   ["D","United States","Paraguay","2026-06-12T21:00:00-04:00"],
-  ["D","Australia","Türkiye","2026-06-13T00:00:00-04:00"],
+  ["D","Australia","Türkiye","2026-06-14T00:00:00-04:00"],
   ["D","United States","Australia","2026-06-19T15:00:00-04:00"],
   ["D","Türkiye","Paraguay","2026-06-19T23:00:00-04:00"],
   ["D","Türkiye","United States","2026-06-25T22:00:00-04:00"],
@@ -248,7 +248,7 @@ const RAW_FIXTURES = [
   ["F","Netherlands","Japan","2026-06-14T16:00:00-04:00"],
   ["F","Sweden","Tunisia","2026-06-14T22:00:00-04:00"],
   ["F","Netherlands","Sweden","2026-06-20T13:00:00-04:00"],
-  ["F","Tunisia","Japan","2026-06-20T00:00:00-04:00"],
+  ["F","Tunisia","Japan","2026-06-21T00:00:00-04:00"],
   ["F","Japan","Sweden","2026-06-25T19:00:00-04:00"],
   ["F","Tunisia","Netherlands","2026-06-25T19:00:00-04:00"],
   ["G","Belgium","Egypt","2026-06-15T15:00:00-04:00"],
@@ -270,7 +270,7 @@ const RAW_FIXTURES = [
   ["I","Norway","France","2026-06-26T15:00:00-04:00"],
   ["I","Senegal","Iraq","2026-06-26T15:00:00-04:00"],
   ["J","Argentina","Algeria","2026-06-16T21:00:00-04:00"],
-  ["J","Austria","Jordan","2026-06-16T00:00:00-04:00"],
+  ["J","Austria","Jordan","2026-06-17T00:00:00-04:00"],
   ["J","Argentina","Austria","2026-06-22T13:00:00-04:00"],
   ["J","Jordan","Algeria","2026-06-22T23:00:00-04:00"],
   ["J","Jordan","Argentina","2026-06-27T22:00:00-04:00"],
@@ -505,18 +505,30 @@ async function importSchedule(apiKey){
   if(updated||koRows.length)await loadMatches();
   return {count:S.matches.length,results:S.matches.filter(m=>m.status==='finished').length};
 }
-// Stellt sicher, dass der feste Gruppen-Spielplan vorhanden ist (und entfernt alte API-Duplikate)
+// Stellt sicher, dass der feste Gruppen-Spielplan vorhanden und aktuell ist.
+// Bestehende Spiele werden bei Datums-/Team-Abweichung korrigiert (Resultate/Tipps bleiben unangetastet, da der Spiel-Schlüssel gleich bleibt).
 async function ensureFixtures(){
   const legacy=S.matches.filter(m=>m.stage==='group'&&String(m.match_key).startsWith('tsdb_'));
   if(legacy.length){try{await db.from('matches').delete().in('match_key',legacy.map(m=>m.match_key));}catch(e){console.warn('Legacy:',e.message);}}
-  const have=new Set(S.matches.filter(m=>!String(m.match_key).startsWith('tsdb_')).map(m=>m.match_key));
-  const rows=GROUP_FIXTURES.filter(f=>!have.has(f.key)).map(f=>({
-    match_key:f.key,stage:'group',group_code:f.group,round_label:null,
-    home_team:f.home,away_team:f.away,kickoff:f.ko,
-    home_score:null,away_score:null,status:'scheduled',sort_order:f.sort,updated_at:new Date().toISOString()
-  }));
-  if(rows.length){for(let i=0;i<rows.length;i+=200){await db.from('matches').upsert(rows.slice(i,i+200),{onConflict:'match_key'});}}
-  if(rows.length||legacy.length)await loadMatches();
+  let changed=legacy.length>0;
+  const byKey={}; S.matches.forEach(m=>byKey[m.match_key]=m);
+  const toInsert=[];
+  for(const f of GROUP_FIXTURES){
+    const ex=byKey[f.key];
+    if(!ex){
+      toInsert.push({match_key:f.key,stage:'group',group_code:f.group,round_label:null,
+        home_team:f.home,away_team:f.away,kickoff:f.ko,home_score:null,away_score:null,
+        status:'scheduled',sort_order:f.sort,updated_at:new Date().toISOString()});
+    } else {
+      const sameTime=ex.kickoff&&(new Date(ex.kickoff).getTime()===new Date(f.ko).getTime());
+      if(!sameTime||ex.home_team!==f.home||ex.away_team!==f.away||ex.group_code!==f.group){
+        try{await db.from('matches').update({kickoff:f.ko,home_team:f.home,away_team:f.away,group_code:f.group,sort_order:f.sort,updated_at:new Date().toISOString()}).eq('match_key',f.key);changed=true;}
+        catch(e){console.warn('Fixture-Update:',e.message);}
+      }
+    }
+  }
+  if(toInsert.length){for(let i=0;i<toInsert.length;i+=200){await db.from('matches').upsert(toInsert.slice(i,i+200),{onConflict:'match_key'});}changed=true;}
+  if(changed)await loadMatches();
 }
 
 /* ============================================================
