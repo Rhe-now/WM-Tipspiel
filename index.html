@@ -306,6 +306,7 @@ const S = {
   matches:[],              // alle Spiele (DB)
   myPreds:{},              // match_key -> {pred_home,pred_away}
   myOrders:{},             // group_code -> [t1,t2,t3,t4]
+  savedGroups:new Set(),   // group_codes mit tatsächlich gespeichertem Platzierungs-Tipp
   players:[],
   finishedPreds:[],        // {player_id,match_key,pred_home,pred_away} (nur beendete Spiele)
   completedOrders:[],      // group_predictions (nur abgeschlossene Gruppen)
@@ -390,9 +391,16 @@ function leaderboard(){
     const m=finishedByKey[pr.match_key];const rec=byPlayer[pr.player_id];if(!m||!rec)return;
     rec.match+=matchPoints(pr.pred_home,pr.pred_away,m.home_score,m.away_score,sc);
   });
-  S.completedOrders.forEach(o=>{
-    const rec=byPlayer[o.player_id];const act=actualOrder[o.group_code];if(!rec||!act)return;
-    (o.ordering||[]).forEach((t,i)=>{if(act[i]===t)rec.place+=sc.position;});
+  // Platzierung: für jeden Spieler in jeder abgeschlossenen Gruppe zählt die angezeigte Reihenfolge
+  // (gespeicherter Tipp, sonst Standard-Auslosungsreihenfolge).
+  const savedMap={};S.completedOrders.forEach(o=>{(savedMap[o.player_id]=savedMap[o.player_id]||{})[o.group_code]=o.ordering;});
+  S.players.forEach(p=>{
+    const rec=byPlayer[p.id];if(!rec)return;
+    completedGroups.forEach(g=>{
+      const act=actualOrder[g];if(!act)return;
+      const ord=(savedMap[p.id]&&savedMap[p.id][g])?savedMap[p.id][g]:GROUPS[g];
+      ord.forEach((t,i)=>{if(act[i]===t)rec.place+=sc.position;});
+    });
   });
   const arr=Object.values(byPlayer).map(r=>({...r,total:r.match+r.place}));
   arr.sort((a,b)=>b.total-a.total||a.name.localeCompare(b.name));
@@ -437,7 +445,7 @@ async function loadMine(){
   const {data:p}=await db.from('predictions').select('match_key,pred_home,pred_away').eq('player_id',S.me.id);
   S.myPreds={};(p||[]).forEach(r=>S.myPreds[r.match_key]={pred_home:r.pred_home,pred_away:r.pred_away});
   const {data:o}=await db.from('group_predictions').select('group_code,ordering').eq('player_id',S.me.id);
-  S.myOrders={};(o||[]).forEach(r=>S.myOrders[r.group_code]=r.ordering);
+  S.myOrders={};S.savedGroups=new Set();(o||[]).forEach(r=>{S.myOrders[r.group_code]=r.ordering;S.savedGroups.add(r.group_code);});
 }
 
 /* ---------- API: Spielplan + Resultate ---------- */
@@ -581,7 +589,7 @@ async function saveOrder(g){
   const {error}=await db.from('group_predictions').upsert(
     {player_id:S.me.id,group_code:g,ordering:ord,updated_at:new Date().toISOString()},
     {onConflict:'player_id,group_code'});
-  if(error){toast('Fehler beim Speichern');console.error(error);}else toast('Platzierung gespeichert');
+  if(error){toast('Fehler beim Speichern');console.error(error);}else{S.savedGroups.add(g);toast('Platzierung gespeichert');}
 }
 function groupLockedForPlacement(g){
   const ms=groupMatches(g);if(!ms.length)return false;
@@ -700,18 +708,23 @@ function renderPlacement(p){
   if(!S.matches.some(m=>m.stage==='group')){
     p.innerHTML=`<div class="card"><h2>Platzierung tippen</h2><div class="empty">Spielplan noch nicht geladen (siehe Tab „Admin“). Die Gruppen kannst du trotzdem unten ordnen.</div></div>`;
   }
-  let html=`<div class="card"><h2>Platzierung tippen</h2><div class="hint">Bring die 4 Teams jeder Gruppe in die erwartete Endreihenfolge (1 = Gruppensieger). Plätze 1–2 = Achtelfinal-Quali. Gesperrt ab dem ersten Gruppenspiel.</div>`;
+  let html=`<div class="card"><h2>Platzierung tippen</h2><div class="hint">Bring die 4 Teams jeder Gruppe in die erwartete Endreihenfolge (1 = Gruppensieger). Plätze 1–2 = Achtelfinal-Quali. Gesperrt ab dem ersten Gruppenspiel. <b>Die angezeigte Reihenfolge zählt</b> – auch unverändert übernommene.</div>`;
+  const sc=S.cfg?.scoring||DEFAULT_SCORING;
   Object.keys(GROUPS).forEach(g=>{
     if(!S.myOrders[g])S.myOrders[g]=GROUPS[g].slice();
     const ord=S.myOrders[g];
     const locked=groupLockedForPlacement(g);
     const finished=groupFinished(g);
     const actual=finished?computeStandings(g).map(s=>s.t):null;
-    html+=`<div class="group-title"><h3>Gruppe ${g}</h3>${finished?'<span class="pill done">abgeschlossen</span>':(locked?'<span class="pill live">gesperrt</span>':'')}</div>`;
+    let badge='';
+    if(finished)badge='<span class="pill done">abgeschlossen</span>';
+    else if(locked)badge='<span class="pill live">gesperrt</span>';
+    html+=`<div class="group-title"><h3>Gruppe ${g}</h3>${badge}</div>`;
     html+=`<ul class="order-list" data-group="${g}">`;
+    let correct=0;
     ord.forEach((t,i)=>{
       let mark='';
-      if(actual){const correct=actual[i]===t;mark=correct?' ✓':' ✗';}
+      if(actual){const ok=actual[i]===t;if(ok)correct++;mark=ok?' ✓':' ✗';}
       html+=`<li class="order-row ${i<2?'qual':''}">
         <span class="pos">${i+1}</span>
         <span class="grow"><span class="flag">${flag(t)}</span><span class="nm">${esc(t)}${mark}</span> ${i<2?'<span class="qbadge">Quali</span>':''}</span>
@@ -722,6 +735,9 @@ function renderPlacement(p){
       </li>`;
     });
     html+=`</ul>`;
+    if(finished){
+      html+=`<div class="note" style="margin:6px 0 2px">Tatsächlich: ${actual.map((t,i)=>`${i+1}.&nbsp;${flag(t)}`).join('  ')}  ·  <b style="color:var(--pitch)">${correct}/4 richtig = +${correct*sc.position} Pkt</b></div>`;
+    }
   });
   html+=`</div>`;
   p.innerHTML=html;
@@ -741,7 +757,7 @@ function renderMe(p){
     p.innerHTML=`<div class="card"><h2>Angemeldet</h2>
       <div class="hint">Du tippst als <b>${esc(S.me.name)}</b>. Auf anderen Geräten meldest du dich mit gleichem Namen + PIN an.</div>
       <button class="btn ghost" id="logout">Abmelden</button></div>`;
-    $('#logout').addEventListener('click',()=>{localStorage.removeItem('wm26_me');S.me=null;S.myPreds={};S.myOrders={};toast('Abgemeldet');render();});
+    $('#logout').addEventListener('click',()=>{localStorage.removeItem('wm26_me');S.me=null;S.myPreds={};S.myOrders={};S.savedGroups=new Set();toast('Abgemeldet');render();});
     return;
   }
   p.innerHTML=`<div class="card"><h2>Mitmachen</h2>
