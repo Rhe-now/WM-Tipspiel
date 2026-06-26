@@ -343,8 +343,9 @@ function matchPoints(ph,pa,rh,ra,sc){
 function groupMatches(g){return S.matches.filter(m=>m.stage==='group'&&m.group_code===g);}
 function groupFinished(g){const ms=groupMatches(g);return ms.length>=6 && ms.filter(m=>m.status==='finished').length>=6;}
 function computeStandings(g){
+  const ms=groupMatches(g).filter(m=>m.status==='finished'&&m.home_score!=null&&m.away_score!=null);
   const stats={};GROUPS[g].forEach(t=>stats[t]={t,pld:0,w:0,d:0,l:0,gf:0,ga:0,pts:0});
-  groupMatches(g).filter(m=>m.status==='finished'&&m.home_score!=null&&m.away_score!=null).forEach(m=>{
+  ms.forEach(m=>{
     const h=stats[m.home_team],a=stats[m.away_team];if(!h||!a)return;
     h.pld++;a.pld++;h.gf+=m.home_score;h.ga+=m.away_score;a.gf+=m.away_score;a.ga+=m.home_score;
     if(m.home_score>m.away_score){h.pts+=3;h.w++;a.l++;}
@@ -352,7 +353,29 @@ function computeStandings(g){
     else{h.pts++;a.pts++;h.d++;a.d++;}
   });
   const arr=Object.values(stats).map(s=>({...s,gd:s.gf-s.ga}));
-  arr.sort((x,y)=>y.pts-x.pts||y.gd-x.gd||y.gf-x.gf||x.t.localeCompare(y.t));
+  // FIFA-Reihenfolge: 1) Punkte 2) Tordiff 3) Tore  -> bei Gleichstand: direkter Vergleich (nur Spiele unter den punktgleichen Teams)
+  function h2h(subset){
+    const set=new Set(subset);const sub={};subset.forEach(t=>sub[t]={pts:0,gf:0,ga:0});
+    ms.forEach(m=>{if(set.has(m.home_team)&&set.has(m.away_team)){
+      const h=sub[m.home_team],a=sub[m.away_team];
+      h.gf+=m.home_score;h.ga+=m.away_score;a.gf+=m.away_score;a.ga+=m.home_score;
+      if(m.home_score>m.away_score)h.pts+=3;else if(m.home_score<m.away_score)a.pts+=3;else{h.pts++;a.pts++;}
+    }});
+    Object.keys(sub).forEach(t=>sub[t].gd=sub[t].gf-sub[t].ga);
+    return sub;
+  }
+  arr.sort((x,y)=>y.pts-x.pts||y.gd-x.gd||y.gf-x.gf||0);
+  let i=0;
+  while(i<arr.length){
+    let j=i+1;
+    while(j<arr.length&&arr[j].pts===arr[i].pts&&arr[j].gd===arr[i].gd&&arr[j].gf===arr[i].gf)j++;
+    if(j-i>1){
+      const H=h2h(arr.slice(i,j).map(s=>s.t));
+      const sorted=arr.slice(i,j).sort((x,y)=>H[y.t].pts-H[x.t].pts||H[y.t].gd-H[x.t].gd||H[y.t].gf-H[x.t].gf||x.t.localeCompare(y.t));
+      for(let k=0;k<sorted.length;k++)arr[i+k]=sorted[k];
+    }
+    i=j;
+  }
   return arr;
 }
 
