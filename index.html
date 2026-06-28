@@ -212,6 +212,7 @@ const SYNONYMS = {
 
 const TEAM2GROUP = {};
 Object.entries(GROUPS).forEach(([g,ts])=>ts.forEach(t=>TEAM2GROUP[t]=g));
+const ALL_TEAMS = Object.keys(TEAM2GROUP).sort((a,b)=>a.localeCompare(b));
 
 // Vollständiger Gruppen-Spielplan (Quelle: offizieller FIFA-/Yahoo-Spielplan). Zeiten in US-Ostzeit (-04:00).
 const RAW_FIXTURES = [
@@ -477,7 +478,7 @@ function buildMatchesFromApi(events, existing){
   });
   return rows;
 }
-async function fetchSchedule(apiKey){
+async function fetchSchedule(apiKey,deep){
   // Gratis-Key liefert pro Methode nur ein Fenster -> mehrere Endpunkte kombinieren.
   // Wird wiederholt aufgerufen; per upsert akkumuliert sich so der ganze Spielplan.
   const k=encodeURIComponent(apiKey||'123');
@@ -487,6 +488,8 @@ async function fetchSchedule(apiKey){
     `eventspastleague.php?id=${WC_LEAGUE_ID}`,
     `eventsseason.php?id=${WC_LEAGUE_ID}&s=${WC_SEASON}`
   ];
+  // Tiefer Abruf (Admin): K.-o.-Runden gezielt nachladen (Filter verwerfen alles Ungültige)
+  if(deep){[4,5,6,7,8,125,126,127,128,129,130,160].forEach(r=>urls.push(`eventsround.php?id=${WC_LEAGUE_ID}&r=${r}&s=${WC_SEASON}`));}
   const map={};let okAny=false,lastErr=null;
   for(const u of urls){
     try{
@@ -499,9 +502,9 @@ async function fetchSchedule(apiKey){
   if(!okAny&&lastErr)throw lastErr;
   return Object.values(map);
 }
-async function importSchedule(apiKey){
+async function importSchedule(apiKey,deep){
   // Holt API-Events und trägt Resultate in die festen Spiele ein (keine Duplikate).
-  const events=await fetchSchedule(apiKey);
+  const events=await fetchSchedule(apiKey,deep);
   if(!events.length)return {count:S.matches.length,results:S.matches.filter(m=>m.status==='finished').length};
   const groupsDone=Object.keys(GROUPS).every(groupFinished);
   let updated=0; const koRows=[];
@@ -527,9 +530,20 @@ async function importSchedule(apiKey){
     } else {
       // echtes K.-o.-Spiel: erst nach Abschluss der Gruppenphase zulassen
       if(!groupsDone)continue;
-      koRows.push({match_key:'tsdb_'+e.idEvent,stage:'ko',group_code:null,round_label:e.strEvent||null,
-        home_team:home,away_team:away,kickoff,home_score:hs,away_score:as,
-        status:finishedFlag?'finished':'scheduled',sort_order:9000,updated_at:new Date().toISOString()});
+      // bestehendes K.-o.-Spiel (manuell oder API) mit gleicher Paarung aktualisieren statt doppeln
+      const ex=S.matches.find(m=>m.stage!=='group'&&((m.home_team===home&&m.away_team===away)||(m.home_team===away&&m.away_team===home)));
+      if(ex){
+        let H=hs,A=as; if(ex.home_team===away){H=as;A=hs;}
+        const upd={updated_at:new Date().toISOString()};let changed=false;
+        if(H!=null&&A!=null&&(ex.home_score!==H||ex.away_score!==A)){upd.home_score=H;upd.away_score=A;changed=true;}
+        if(finishedFlag&&ex.status!=='finished'){upd.status='finished';changed=true;}
+        if(kickoff&&!ex.kickoff){upd.kickoff=kickoff;changed=true;}
+        if(changed){const {error}=await db.from('matches').update(upd).eq('match_key',ex.match_key);if(!error)updated++;}
+      } else {
+        koRows.push({match_key:'tsdb_'+e.idEvent,stage:'ko',group_code:null,round_label:e.strEvent||null,
+          home_team:home,away_team:away,kickoff,home_score:hs,away_score:as,
+          status:finishedFlag?'finished':'scheduled',sort_order:9000,updated_at:new Date().toISOString()});
+      }
     }
   }
   if(koRows.length){await db.from('matches').upsert(koRows,{onConflict:'match_key'});}
@@ -830,8 +844,20 @@ function renderAdmin(p){
   </div>
 
   <div class="card"><h2>Resultate manuell</h2>
-    <div class="hint">Endstand eintragen und auf „beendet“ setzen. Wird sofort in die Punkte einberechnet.</div>
+    <div class="hint">Chronologisch sortiert. Endstand eintragen und auf „beendet“ setzen – wird sofort in die Punkte einberechnet.</div>
     <div id="adminMatches"></div>
+  </div>
+
+  <div class="card"><h2>K.-o.-Spiel manuell hinzufügen</h2>
+    <div class="hint">Falls eine Paarung nicht automatisch erscheint, hier selbst anlegen. Mitspieler können sie danach tippen (bis zum Anpfiff), Resultat trägst du oben ein.</div>
+    <label>Heim</label>
+    <select id="koHome">${ALL_TEAMS.map(t=>`<option value="${esc(t)}">${flag(t)} ${esc(t)}</option>`).join('')}</select>
+    <label>Auswärts</label>
+    <select id="koAway">${ALL_TEAMS.map(t=>`<option value="${esc(t)}">${flag(t)} ${esc(t)}</option>`).join('')}</select>
+    <label>Anpfiff</label>
+    <input type="datetime-local" id="koWhen">
+    <div class="row" style="margin-top:12px"><button class="btn" id="koAdd">K.-o.-Spiel anlegen</button></div>
+    <div id="koMsg" class="note" style="margin-top:8px"></div>
   </div>
 
   <div class="card"><h2>Punkteregeln</h2>
@@ -851,9 +877,10 @@ function renderAdmin(p){
     try{
       const key=$('#apiKey').value.trim()||'123';
       if(key!==S.cfg.api_key){await db.from('config').update({api_key:key}).eq('id',1);S.cfg.api_key=key;}
-      const res=await importSchedule(key);
-      if(res.count===0){$('#fetchMsg').innerHTML='Die API lieferte 0 Spiele. Möglich: Saison-Methode ist auf dem Gratis-Key gesperrt, oder noch keine Daten. Bitte manuell erfassen oder Premium-Key testen.';}
-      else{$('#fetchMsg').innerHTML=`Importiert: ${res.count} Spiele, ${res.results} mit Resultat.`;await loadScoringInputs();}
+      const res=await importSchedule(key,true);
+      const ko=S.matches.filter(m=>m.stage!=='group').length;
+      if(res.count===0){$('#fetchMsg').innerHTML='Die API lieferte 0 Spiele. Möglich: Methode auf dem Gratis-Key gesperrt. Bitte manuell erfassen oder Premium-Key testen.';}
+      else{$('#fetchMsg').innerHTML=`Aktualisiert. Spiele im System: ${res.count}, davon mit Resultat: ${res.results}. K.-o.-Spiele: <b>${ko}</b>.`+(ko<16?' (Fehlende Achtelfinals erscheinen, sobald die Quelle beide Teams benennt – oder unten manuell anlegen.)':'');await loadScoringInputs();}
       renderAdmin($('#panel'));
     }catch(e){console.error(e);$('#fetchMsg').innerHTML='Abruf fehlgeschlagen: '+esc(e.message)+'. (CORS/Netz/Key prüfen, oder manuell erfassen.)';btn.disabled=false;}
   });
@@ -862,6 +889,19 @@ function renderAdmin(p){
     const ns={exact:+$('#scExact').value,gd:+$('#scGd').value,tendency:+$('#scTend').value,position:+$('#scPos').value};
     const {error}=await db.from('config').update({scoring:ns}).eq('id',1);
     if(error){toast('Fehler');return;}S.cfg.scoring=ns;toast('Regeln gespeichert');
+  });
+  const koAddBtn=$('#koAdd');
+  if(koAddBtn)koAddBtn.addEventListener('click',async()=>{
+    const home=$('#koHome').value, away=$('#koAway').value, when=$('#koWhen').value;
+    if(home===away){$('#koMsg').textContent='Heim und Auswärts müssen verschieden sein.';return;}
+    const exists=S.matches.find(m=>m.stage!=='group'&&((m.home_team===home&&m.away_team===away)||(m.home_team===away&&m.away_team===home)));
+    if(exists){$('#koMsg').textContent='Diese Paarung existiert bereits.';return;}
+    const kickoff=when?new Date(when).toISOString():null;
+    const row={match_key:'man_ko_'+Date.now(),stage:'ko',group_code:null,round_label:'K.-o.-Runde',
+      home_team:home,away_team:away,kickoff,home_score:null,away_score:null,status:'scheduled',sort_order:9000,updated_at:new Date().toISOString()};
+    const {error}=await db.from('matches').upsert(row,{onConflict:'match_key'});
+    if(error){$('#koMsg').textContent='Fehler: '+error.message;return;}
+    await loadMatches();toast('K.-o.-Spiel angelegt');renderAdmin($('#panel'));
   });
   renderAdminMatches();
 }
