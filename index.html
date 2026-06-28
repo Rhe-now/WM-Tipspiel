@@ -320,7 +320,7 @@ const $ = s=>document.querySelector(s);
 const el = (h)=>{const d=document.createElement('div');d.innerHTML=h.trim();return d.firstElementChild;};
 const esc = s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]));
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2200);}
-function norm(s){return String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z ]/g,"").replace(/\s+/g," ").trim();}
+function norm(s){return String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z]+/g," ").replace(/\s+/g," ").trim();}
 function isPlaceholder(s){return /\d|winner|sieger|runner|best|third|3rd|\bw[a-l]\b|\br[0-9]|loser|tbd|group|match|qualifier|play-?off|\bvs\b|to be/i.test(String(s||""));}
 function canon(name){const n=norm(name);if(SYNONYMS[n])return SYNONYMS[n];
   for(const t of Object.keys(TEAM2GROUP)){if(norm(t)===n)return t;}
@@ -489,7 +489,7 @@ async function fetchSchedule(apiKey,deep){
     `eventsseason.php?id=${WC_LEAGUE_ID}&s=${WC_SEASON}`
   ];
   // Tiefer Abruf (Admin): K.-o.-Runden gezielt nachladen (Filter verwerfen alles Ungültige)
-  if(deep){[4,5,6,7,8,125,126,127,128,129,130,160].forEach(r=>urls.push(`eventsround.php?id=${WC_LEAGUE_ID}&r=${r}&s=${WC_SEASON}`));}
+  if(deep){[32,16,8,4,2].forEach(r=>urls.push(`eventsround.php?id=${WC_LEAGUE_ID}&r=${r}&s=${WC_SEASON}`));}
   const map={};let okAny=false,lastErr=null;
   for(const u of urls){
     try{
